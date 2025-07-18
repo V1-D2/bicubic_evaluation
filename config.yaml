@@ -1,0 +1,18 @@
+# config.yaml - Bicubic Evaluation Configuration
+
+data:
+  # Path to the NPZ file to evaluate
+  npz_file: "$HOME/temperature_sr_project/data/your_file.npz"  # Update this path
+
+evaluation:
+  # Maximum number of samples to evaluate
+  max_samples: 1000
+
+  # Scale factor for super-resolution
+  scale_factor: 2
+
+  # Number of comparison images to save (first N images)
+  save_comparisons: 10
+
+# Results will be saved in ./results/ directory
+# Images will be saved at their original full resolution with turbo colormap
