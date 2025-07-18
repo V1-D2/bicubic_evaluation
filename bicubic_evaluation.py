@@ -357,6 +357,7 @@ def main():
         config = yaml.load(f, Loader=yaml.FullLoader)
 
     # Create evaluator and run
+    # Create evaluator and run
     evaluator = BicubicEvaluator(config)
     evaluator.run_evaluation()
 

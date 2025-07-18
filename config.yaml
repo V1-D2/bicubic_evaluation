@@ -2,7 +2,7 @@
 
 data:
   # Path to the NPZ file to evaluate
-  npz_file: "$HOME/temperature_sr_project/data/your_file.npz"  # Update this path
+  npz_file: "AMSR2_temp_only_20180101_000000_to_20190101_000000_part_4of11.npz"  # Update this path
 
 evaluation:
   # Maximum number of samples to evaluate
