@@ -12,8 +12,6 @@ import logging
 from datetime import datetime
 import gc
 
-# Add the neural network project path to import from another directory
-sys.path.append('/home/vdidur/2x_temperature_sr_project')
 
 # Import the temperature preprocessor from the neural network project
 from data_preprocessing import TemperatureDataPreprocessor
@@ -86,13 +84,14 @@ class BicubicEvaluator:
             swath = swaths[i]
             temp = swath['temperature'].astype(np.float32)
 
-            # **CRITICAL CHANGE**: Use SAME preprocessing as neural network
+
+            # **FIXED**: Use SAME preprocessing as neural network
 
             # 1. Crop/pad to target size (same as neural network)
             temp = self.preprocessor.crop_or_pad(temp)
 
-            # 2. Use SAME normalization as neural network (NOT min-max!)
-            temp_normalized = self.normalize_like_neural_network(temp)
+            # 2. Use SAME normalization as neural network (min-max [0,1])
+            temp_normalized = self.preprocessor.normalize_temperature(temp)
 
             temperatures.append(temp_normalized)
             metadata.append({
@@ -108,23 +107,6 @@ class BicubicEvaluator:
 
         return temperatures, metadata
 
-    def normalize_like_neural_network(self, temp_array: np.ndarray) -> np.ndarray:
-        """
-        **CRITICAL**: Use SAME normalization as neural network training
-        This replaces the min-max normalization with fixed normalization
-        """
-        # Handle NaN values (same as neural network)
-        mask = np.isnan(temp_array)
-        if mask.any():
-            mean_val = np.nanmean(temp_array)
-            temp_array[mask] = mean_val
-
-        # **SAME FIXED NORMALIZATION AS NEURAL NETWORK**
-        # This is equivalent to normalize_brightness_temperature from AMSR2DataPreprocessor
-        temp_array = np.clip(temp_array, 50, 350)  # Clip to valid temperature range
-        normalized = (temp_array - 200) / 150  # Fixed normalization: roughly [-1, 1]
-
-        return normalized.astype(np.float32)
 
     def create_lr_hr_pairs(self, temperatures, scale_factor=2):
         """Create LR-HR pairs using SAME method as neural network"""
@@ -168,7 +150,8 @@ class BicubicEvaluator:
         sr_image = sr_tensor.squeeze().numpy()
 
         # **SAME RANGE AS NEURAL NETWORK**: clamp to [-1, 1] approximately
-        sr_image = np.clip(sr_image, -1, 1)
+        # **FIXED RANGE**: clamp to [0, 1] for min-max normalization
+        sr_image = np.clip(sr_image, 0, 1)
 
         return sr_image
 
@@ -178,12 +161,12 @@ class BicubicEvaluator:
         # This ensures fair comparison with neural network
 
         # First convert from [-1,1] to [0,1]
-        sr_01 = (sr_image + 1.0) / 2.0
-        hr_01 = (hr_image + 1.0) / 2.0
+        # **FIXED**: Convert from [0,1] to [0,255] for metrics calculation
+        # Data is already in [0,1] range from min-max normalization
 
-        # Then to [0,255] range for metrics calculation
-        sr_uint8 = (sr_01 * 255).astype(np.uint8)
-        hr_uint8 = (hr_01 * 255).astype(np.uint8)
+        # Convert to [0,255] range for metrics calculation
+        sr_uint8 = (sr_image * 255).astype(np.uint8)
+        hr_uint8 = (hr_image * 255).astype(np.uint8)
 
         # Calculate PSNR
         psnr = calculate_psnr(sr_uint8, hr_uint8, crop_border=0, test_y_channel=False)
@@ -200,9 +183,12 @@ class BicubicEvaluator:
 
         # **CONVERT BACK TO TEMPERATURE FOR VISUALIZATION**
         # Reverse the neural network normalization: T = norm * 150 + 200
-        lr_temp = lr_image * 150 + 200
-        sr_temp = sr_image * 150 + 200
-        hr_temp = hr_image * 150 + 200
+        # **CONVERT BACK TO TEMPERATURE FOR VISUALIZATION**
+        # Reverse the min-max normalization: need original min/max values
+        # For now, use approximate temperature range
+        lr_temp = lr_image * (350 - 50) + 50  # Approximate K range
+        sr_temp = sr_image * (350 - 50) + 50
+        hr_temp = hr_image * (350 - 50) + 50
 
         # Find common scale for consistent visualization
         vmin = min(lr_temp.min(), sr_temp.min(), hr_temp.min())
@@ -277,6 +263,12 @@ class BicubicEvaluator:
             temperatures,
             scale_factor=self.config['evaluation']['scale_factor']
         )
+
+        if len(lr_images) > 0:
+            self.logger.info(f"LR shape: {lr_images[0].shape}")
+            self.logger.info(f"HR shape: {hr_images[0].shape}")
+            self.logger.info(f"LR range: [{lr_images[0].min():.3f}, {lr_images[0].max():.3f}]")
+            self.logger.info(f"HR range: [{hr_images[0].min():.3f}, {hr_images[0].max():.3f}]")
 
         # Create results directory with subdirectories
         os.makedirs('results/images', exist_ok=True)
